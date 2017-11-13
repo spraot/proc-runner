@@ -1,0 +1,15 @@
+{
+  "name": "childproc",
+  "version": "1.0.0",
+  "description": "",
+  "main": "child.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "terminal-kit": "^1.14.1"
+  }
+}
