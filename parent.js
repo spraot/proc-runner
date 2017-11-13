@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 
+"use strict" ;
+
 const spawn = require('child_process').spawn;
 const term = require('terminal-kit').terminal;
+const log = require('./log');
 const proc_count = 10;
 const concurrency = 4;
+term.grabInput();
 
 const procs = [];
+let i = 0;
 while (procs.length<proc_count) {
-    const len = Math.random()*10;
-    procs.push({name: 'process_length_'+len.toFixed(0), proc_length: len});
+    const len = Math.random()*60+1;
+    i++;
+    procs.push({name: 'process_'+i, proc_length: len});
 }
 
 function spawnNext() {
@@ -18,21 +24,18 @@ function spawnNext() {
     next.process = spawn('./child.js', [next.proc_length.toFixed(0)], {stdio: 'pipe'});
     next.started = true;
 
-    term.on('terminal', (name, data) => {
-	    next.lineNo = data.y;
-	    console.log(next.name);
-	    console.log(next.name+' progress is on line no. '+next.lineNo);
-    })
-    //term.requestCursorLocation();
+    next.lineNo = log.curLine();
+    log(next.name+': Started\n');
 
     let lastStatus = '';
     function setStatus(status) {
-        console.log(next.name+': '+status);
-    	//term.saveCursor();
-        //term.moveTo(next.name.length+1,next.lineNo);
-        //console.log(': '+status);
-        //term.eraseLineAfter();
-    	//term.restoreCursor();
+    	term.saveCursor();
+
+    	const startAt = next.name.length+2;
+        term.move(startAt,next.lineNo-log.curLine());
+        process.stdout.write(status.slice(0,term.width-startAt));
+        term.eraseLineAfter();
+    	term.restoreCursor();
     	lastStatus = status;
     }
 
@@ -53,23 +56,33 @@ function spawnNext() {
     	if (code===0) {
     		setStatus('Done!');
     	} else {
-    		setStatus('Failed with error code '+code+' and message: '+lastStatus)
+    		setStatus('Failed: '+lastStatus)
     	}
 
         next.done = true;
         next.exitCode = code;
-        if (!spawnNext() && !procs.some(x => !x.done)) {
-            console.log();
-            console.log('All processes done')
-            process.exit();
+        if (!spawnNext(_=>0) && !procs.some(x => !x.done)) {
+            log('\nAll processes done\n');
+            terminate();
         }
     });
 
     return next.process;
 }
 
-console.log(`Running ${proc_count} subprocesses...`);
-console.log();
+function terminate() {	
+    term.grabInput(false);
+    setTimeout( function() { process.exit() ; } , 100 );
+}
 
-for (let x of Array(concurrency))
-	spawnNext();
+term.on('key', function(name, matches, data) {	
+	if (matches.indexOf('CTRL_C') >= 0) {
+		terminate();
+	}
+});
+
+// Start calculations
+log(`Running ${proc_count} subprocesses...\n\n`);
+
+for (let x of new Array(concurrency))
+    setTimeout(spawnNext,x*100);
