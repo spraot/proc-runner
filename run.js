@@ -14,20 +14,29 @@ module.exports = function(procs, options, callback) {
         options = {};
     }
     options = options || {};
-
     let terminating = false;
+
+    for (const proc of procs) {
+        proc.ready = () => !terminating && !proc.started && !proc.done && !proc.terminated;
+        proc.running = () => proc.started && !proc.done && !proc.terminated;
+        proc.terminate = () => {
+            if (proc.running()) {
+                proc.process.kill();
+                proc.terminated = true;
+            }
+        };
+    }
 
     term.grabInput();
 
     function spawnNext() {
-        if (terminating) return;
-        const next = procs.find(x => !x.started && !x.done);
+        const next = procs.find(x => x.ready());
         if (!next) return;
 
         next.process = spawn(next.exec, next.args, {stdio: 'pipe'});
         next.started = true;
 
-        next.lineNo = log.curLine();
+        const lineNo = log.curLine();
         log(next.name + ': Started\n');
 
         let lastStatus = '';
@@ -36,7 +45,7 @@ module.exports = function(procs, options, callback) {
             term.saveCursor();
 
             const startAt = next.name.length + 2;
-            term.move(startAt, next.lineNo - log.curLine());
+            term.move(startAt, lineNo - log.curLine());
             process.stdout.write(status.slice(0, term.width - startAt));
             term.eraseLineAfter();
             term.restoreCursor();
@@ -84,13 +93,14 @@ module.exports = function(procs, options, callback) {
         let killedCount = 0;
         let doneCount = 0;
         for (const proc of procs) {
-            if (proc.started && !proc.done) {
-                proc.process.kill();
+            if (proc.running)
+                proc.terminate();
+            if (proc.terminated)
                 killedCount++;
-            }
             if (proc.error !== undefined)
                 errCount++;
-            else if (proc.done) doneCount++;
+            else if (proc.done)
+                doneCount++;
         }
         log(errCount+' processes failed\n');
         log(killedCount+' processes terminated\n');
