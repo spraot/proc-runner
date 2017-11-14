@@ -3,11 +3,12 @@
 "use strict" ;
 
 const spawn = require('child_process').spawn;
-const term = require('terminal-kit').terminal;
 const concurrency = require('os').cpus().length;
+const startTimeout = 5000;
+const procTimeout = 2*60*1000;
 
-module.exports = function(procs, options, callback) {
-    const log = require('./log')();
+module.exports = function(initialProcs, options, callback) {
+    const term_ctrl = require('./log')();
 
     if (!callback && typeof options === 'function') {
         callback = options;
@@ -15,113 +16,173 @@ module.exports = function(procs, options, callback) {
     }
     options = options || {};
     let terminating = false;
+    let finalized = false;
+    const procs = [];
 
-    for (const proc of procs) {
+    function addProc(newProc) {
+        if (Array.isArray(newProc)) return newProc.forEach(addProc);
+
+        const proc = {
+            exec: newProc.exec,
+            name: newProc.name || newProc.exec,
+            args: newProc.args || [],
+            inx: procs.length+1
+        };
+
         proc.ready = () => !terminating && !proc.started && !proc.done && !proc.terminated;
         proc.running = () => proc.started && !proc.done && !proc.terminated;
-        proc.terminate = () => {
-            if (proc.running()) {
-                proc.process.kill();
-                proc.terminated = true;
-            }
-        };
-    }
+        proc.terminate = () => false;
 
-    term.grabInput();
+        if (typeof (proc.exec) !== 'string')
+            throw new Error(`Command for process ${proc.inx} (${proc.name}) is not a string/path`);
+
+        procs.push(proc);
+    }
 
     function spawnNext() {
         const next = procs.find(x => x.ready());
         if (!next) return;
 
-        next.process = spawn(next.exec, next.args, {stdio: 'pipe'});
         next.started = true;
-
-        const lineNo = log.curLine();
-        log(next.name + ': Started\n');
-
+        exports.startedCount++;
         let lastStatus = '';
+        let stdoutBuffer = '';
 
-        function setStatus(status) {
-            term.saveCursor();
+        const statusLine = term_ctrl.createStatusLine();
+        setStatus('Started');
 
-            const startAt = next.name.length + 2;
-            term.move(startAt, lineNo - log.curLine());
-            process.stdout.write(status.slice(0, term.width - startAt));
-            term.eraseLineAfter();
-            term.restoreCursor();
-            lastStatus = status;
+        let process;
+        try {
+            process = spawn(next.exec, next.args, {stdio: 'pipe'});
+            process.on('close', onClose);
+            process.on('error', onError);
+            process.stdout.on('data', onData);
+        } catch (e) {
+            next.done = true;
+            onError(e);
+            onClose(1);
         }
 
-        let output = '';
-        next.process.stdout.on('data', (chunk) => {
+        setTimeout(() => {
+            if (lastStatus === 'Started') {
+                next.error = 'timed out waiting for response from '+next.exec;
+                next.terminate();
+            }
+        }, startTimeout);
+
+        setTimeout(() => {
+            if (next.running()) {
+                next.error = 'process timed out';
+                next.terminate();
+            }
+        }, procTimeout);
+
+        function setStatus(status) {
+            lastStatus = status;
+            statusLine(`[${next.inx}] ${next.name}: ${status}`);
+        }
+
+        function onError(err) {
+            setStatus('Could not start - '+err.message);
+        }
+
+        function onClose(code) {
+            next.done = true;
+            next.exitCode = code;
+
+            if (code === 0) {
+                setStatus('Done!');
+            } else if (process.killed && !next.error) {
+                setStatus('Terminated')
+            } else {
+                next.error = next.error || lastStatus;
+                setStatus('Failed: ' + next.error)
+            }
+
+            if (next.error !== undefined)
+                exports.errCount++;
+            else if (next.terminated)
+                exports.killedCount++;
+            else if (next.done)
+                exports.doneCount++;
+
+            if (!terminating && !spawnNext() && finalized && !procs.some(x => !x.done)) {
+                terminate();
+            }
+        }
+
+        function onData(chunk) {
             chunk = chunk.toString().split('\n').splice(-2);
             if (chunk.length === 0) return;
 
-            output += chunk[0];
+            stdoutBuffer += chunk[0];
 
             if (chunk.length === 2) {
-                setStatus(output);
-                output = chunk[1];
+                setStatus(stdoutBuffer);
+                stdoutBuffer = chunk[1];
             }
-        });
+        }
 
-        next.process.on('close', function (code) {
-            if (code === 0) {
-                setStatus('Done!');
-            } else if (next.process.killed) {
-                setStatus('Terminated')
-            } else {
-                next.error = lastStatus;
-                setStatus('Failed: ' + lastStatus)
+        next.terminate = () => {
+            if (next.running()) {
+                process.kill();
+                return next.terminated = true;
             }
+        };
 
-            next.done = true;
-            next.exitCode = code;
-            if (!spawnNext() && !procs.some(x => !x.done)) {
-                log('\nAll processes done\n');
-                terminate();
-            }
-        });
-
-        return next.process;
+        return true;
     }
 
     function terminate() {
         terminating = true;
 
-        let errCount = 0;
-        let killedCount = 0;
-        let doneCount = 0;
         for (const proc of procs) {
             if (proc.running)
                 proc.terminate();
-            if (proc.terminated)
-                killedCount++;
-            if (proc.error !== undefined)
-                errCount++;
-            else if (proc.done)
-                doneCount++;
         }
-        log(errCount+' processes failed\n');
-        log(killedCount+' processes terminated\n');
-        log(doneCount+' processes finished successfully\n');
 
-        term.grabInput(false);
+        term_ctrl.restore();
+
         setTimeout(function () {
             callback();
         }, 100);
     }
 
-    term.on('key', function (name, matches, data) {
-        if (matches.indexOf('CTRL_C') >= 0) {
-            log('\nStopping all processes...\n');
-            terminate();
-        }
+    term_ctrl.onTerminate(() => {
+        console.log('\nCtrl-C pressed, stopping all processes...');
+        terminate();
     });
 
-    // Start calculations
-    log(`Running ${procs.length} subprocesses...\n\n`);
+    function startSims() {
+        let cpusAvail = concurrency;
+        for (const proc of procs)
+            if (proc.running()) cpusAvail--;
 
-    for (let x of new Array(concurrency))
-        setTimeout(spawnNext, x * 100);
+        for (let x of new Array(cpusAvail).keys())
+            setTimeout(spawnNext, x * 100);
+    }
+
+    const exports = {
+        startedCount: 0,
+        errCount: 0,
+        killedCount: 0,
+        doneCount: 0,
+        terminate,
+        addProc: (...args) => {
+            addProc(...args);
+            startSims();
+        },
+        finalize: () => finalized = true,
+    };
+
+    // Start calculations
+    try {
+        addProc(initialProcs);
+        startSims();
+    } catch (e) {
+        callback(e.message);
+        return;
+    }
+
+    return exports
 };

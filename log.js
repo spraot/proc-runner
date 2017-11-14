@@ -2,16 +2,29 @@
 
 const term = require('terminal-kit').terminal;
 
+function hook_stdout(callback) {
+    let old_write = process.stdout.write;
+
+    process.stdout.write = (function (write) {
+        return function (string, encoding, fd) {
+            write.apply(process.stdout, arguments);
+            callback(string, encoding, fd)
+        }
+    })(process.stdout.write);
+
+    return () => process.stdout.write = old_write;
+}
+
 module.exports = function() {
-    log.curLine = () => curLine;
-    log.curCol = () => curCol;
+    term.grabInput();
+    const unhook = hook_stdout(count_lines);
 
     let curLine = 1;
     let curCol = 1;
+    let cursorMoved = false;
 
-    function log(txt, wrap) {
-        if (wrap === undefined) wrap = true;
-        if (!wrap) txt = txt.split('\n').map((x, i) => x.slice(0, term.width - (i === 0 ? curCol - 1 : 0))).join('\n');
+    function count_lines(txt) {
+        if (cursorMoved) return;
 
         const lines = txt.split('\n').map(x => x.length);
 
@@ -27,34 +40,44 @@ module.exports = function() {
             curCol = 1;
             curCol += lines.slice(-1)[0];
         }
-
-        process.stdout.write(txt);
     }
 
-    log.writeLoc = () => log(`Cursor location = ${curLine}:${curCol}\n`);
+    const exports = {};
+    exports.curLine = () => curLine;
+    exports.curCol = () => curCol;
+    exports.restore = () => {
+        term.grabInput(false);
+        unhook();
+    };
+    exports.logTruncated = txt => {
+        console.log(txt.split('\n').map((x, i) => x.slice(0, term.width - (i === 0 ? curCol - 1 : 0))).join('\n'));
+    };
 
-    return log;
+    exports.createStatusLine = (initialTxt) => {
+        if (curCol !== 1) console.log();
+        const lineNo = curLine;
+        console.log(initialTxt || '');
+        return (txt) => {
+            cursorMoved = true;
+            term.saveCursor();
+            term.previousLine(curLine - lineNo);
+
+            // Set text (truncate to console width)
+            process.stdout.write(txt.slice(0, term.width));
+            term.eraseLineAfter();
+
+            term.restoreCursor();
+            cursorMoved = false;
+        }
+    };
+
+    exports.onTerminate = (callback) => {
+        term.on('key', function (name, matches, data) {
+            if (matches.indexOf('CTRL_C') >= 0) {
+                callback();
+            }
+        });
+    };
+
+    return exports;
 };
-
-// const log = module.exports();
-// log.writeLoc();
-// log('\ntest\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsing. The resulting message might not be the same as what is originally sent. See notes in the JSON.stringify() specification.\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsing. The resulting message might not be the same as what is originally sent. See notes in the JSON.stringify() specification.\n', false);
-// log.writeLoc();
-// log('\n\ntest\n\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsin\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsing\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsings\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsingNote: The message goes through JSON serialization and parsin\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsingNote: The message goes through JSON serialization and parsing\n');
-// log.writeLoc();
-// log('Note: The message goes through JSON serialization and parsingNote: The message goes through JSON serialization and parsings\n');
-// log.writeLoc();
