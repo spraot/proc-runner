@@ -1,14 +1,18 @@
 {
-  "name": "childproc",
+  "name": "proc-runner",
   "version": "0.0.1",
   "description": "",
-  "main": "child.js",
+  "main": "run.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "spawn",
+    "child_process",
+    "cli"
+  ],
+  "author": "Jason Boileau <jason@boileau.dk>",
+  "license": "MIT",
   "dependencies": {
     "terminal-kit": "^1.14.1"
   }

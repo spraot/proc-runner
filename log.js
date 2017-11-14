@@ -71,7 +71,7 @@ module.exports = function() {
         }
     };
 
-    exports.onTerminate = (callback) => {
+    exports.onCtrlC = (callback) => {
         term.on('key', function (name, matches, data) {
             if (matches.indexOf('CTRL_C') >= 0) {
                 callback();

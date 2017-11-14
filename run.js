@@ -2,21 +2,16 @@
 
 "use strict" ;
 
+const EventEmitter = require('events');
 const spawn = require('child_process').spawn;
 const concurrency = require('os').cpus().length;
 const startTimeout = 5000;
 const procTimeout = 2*60*1000;
 
-module.exports = function(initialProcs, options, callback) {
-    const term_ctrl = require('./log')();
-
-    if (!callback && typeof options === 'function') {
-        callback = options;
-        options = {};
-    }
+module.exports = function(initialProcs, options) {
     options = options || {};
-    let terminating = false;
-    let finalized = false;
+    const term_ctrl = require('./log')();
+    const eventEmitter = new EventEmitter();
     const procs = [];
 
     function addProc(newProc) {
@@ -29,7 +24,7 @@ module.exports = function(initialProcs, options, callback) {
             inx: procs.length+1
         };
 
-        proc.ready = () => !terminating && !proc.started && !proc.done && !proc.terminated;
+        proc.ready = () => !exports.terminating && !proc.started && !proc.done && !proc.terminated;
         proc.running = () => proc.started && !proc.done && !proc.terminated;
         proc.terminate = () => false;
 
@@ -50,6 +45,7 @@ module.exports = function(initialProcs, options, callback) {
 
         const statusLine = term_ctrl.createStatusLine();
         setStatus('Started');
+        eventEmitter.emit('processStarted', next);
 
         let process;
         try {
@@ -92,11 +88,14 @@ module.exports = function(initialProcs, options, callback) {
 
             if (code === 0) {
                 setStatus('Done!');
+                eventEmitter.emit('processDone', next);
             } else if (process.killed && !next.error) {
-                setStatus('Terminated')
+                setStatus('Terminated');
+                eventEmitter.emit('processTerminated', next);
             } else {
                 next.error = next.error || lastStatus;
-                setStatus('Failed: ' + next.error)
+                setStatus('Failed: ' + next.error);
+                eventEmitter.emit('processError', next, next.error);
             }
 
             if (next.error !== undefined)
@@ -106,8 +105,11 @@ module.exports = function(initialProcs, options, callback) {
             else if (next.done)
                 exports.doneCount++;
 
-            if (!terminating && !spawnNext() && finalized && !procs.some(x => !x.done)) {
-                terminate();
+            if (!exports.terminating && !spawnNext() && !procs.some(x => !x.done)) {
+                eventEmitter.emit('idle', next);
+                if (exports.finalized) {
+                    terminate();
+                }
             }
         }
 
@@ -133,8 +135,8 @@ module.exports = function(initialProcs, options, callback) {
         return true;
     }
 
-    function terminate() {
-        terminating = true;
+    function terminate(reason) {
+        exports.terminating = true;
 
         for (const proc of procs) {
             if (proc.running)
@@ -144,17 +146,20 @@ module.exports = function(initialProcs, options, callback) {
         term_ctrl.restore();
 
         setTimeout(function () {
-            callback();
+            eventEmitter.emit('terminated', {
+                terminatedReason: reason,
+                startedCount: exports.startedCount,
+                errCount: exports.errCount,
+                killedCount: exports.killedCount,
+                doneCount: exports.doneCount
+            });
         }, 100);
     }
 
-    term_ctrl.onTerminate(() => {
-        console.log('\nCtrl-C pressed, stopping all processes...');
-        terminate();
-    });
+    term_ctrl.onCtrlC(() => terminate('Ctrl-C pressed, stopping all processes...'));
 
     function startSims() {
-        let cpusAvail = concurrency;
+        let cpusAvail = exports.cpuCount;
         for (const proc of procs)
             if (proc.running()) cpusAvail--;
 
@@ -163,26 +168,24 @@ module.exports = function(initialProcs, options, callback) {
     }
 
     const exports = {
+        cpuCount: options.cpuCount || concurrency,
         startedCount: 0,
         errCount: 0,
         killedCount: 0,
         doneCount: 0,
+        terminating: false,
+        finalized: false,
         terminate,
         addProc: (...args) => {
             addProc(...args);
             startSims();
         },
-        finalize: () => finalized = true,
+        finalize: () => exports.finalized = true,
+        on: (...args) => eventEmitter.on(...args)
     };
 
-    // Start calculations
-    try {
-        addProc(initialProcs);
-        startSims();
-    } catch (e) {
-        callback(e.message);
-        return;
-    }
+    addProc(initialProcs);
+    startSims();
 
     return exports
 };
