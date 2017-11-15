@@ -3,12 +3,13 @@
 "use strict" ;
 
 const EventEmitter = require('events');
-const spawn = require('child_process').spawn;
 const concurrency = require('os').cpus().length;
 const startTimeout = 5000;
 const procTimeout = 2*60*1000;
 
 module.exports = function(initialProcs, options) {
+    const spawn = require('child_process').spawn; // Here for testing
+
     options = options || {};
     const term_ctrl = require('./log')();
     const eventEmitter = new EventEmitter();
@@ -53,6 +54,7 @@ module.exports = function(initialProcs, options) {
             process.on('close', onClose);
             process.on('error', onError);
             process.stdout.on('data', onData);
+            process.stderr.on('data', onData);
         } catch (e) {
             next.done = true;
             onError(e);
@@ -86,9 +88,11 @@ module.exports = function(initialProcs, options) {
             next.done = true;
             next.exitCode = code;
 
+            if (stdoutBuffer) setStatus(stdoutBuffer);
+
             if (code === 0) {
                 setStatus('Done!');
-                eventEmitter.emit('processDone', next);
+                eventEmitter.emit('processSuccess', next);
             } else if (process.killed && !next.error) {
                 setStatus('Terminated');
                 eventEmitter.emit('processTerminated', next);
@@ -97,20 +101,16 @@ module.exports = function(initialProcs, options) {
                 setStatus('Failed: ' + next.error);
                 eventEmitter.emit('processError', next, next.error);
             }
+            eventEmitter.emit('processDone', next);
 
             if (next.error !== undefined)
                 exports.errCount++;
             else if (next.terminated)
                 exports.killedCount++;
             else if (next.done)
-                exports.doneCount++;
+                exports.successCount++;
 
-            if (!exports.terminating && !spawnNext() && !procs.some(x => !x.done)) {
-                eventEmitter.emit('idle', next);
-                if (exports.finalized) {
-                    terminate();
-                }
-            }
+            checkForIdle();
         }
 
         function onData(chunk) {
@@ -135,6 +135,16 @@ module.exports = function(initialProcs, options) {
         return true;
     }
 
+    function checkForIdle() {
+        if (!exports.terminating && !spawnNext() && !procs.some(x => !x.done)) {
+            if (exports.finalized) {
+                terminate();
+            } else {
+                eventEmitter.emit('idle', next);
+            }
+        }
+    }
+
     function terminate(reason) {
         exports.terminating = true;
 
@@ -151,7 +161,7 @@ module.exports = function(initialProcs, options) {
                 startedCount: exports.startedCount,
                 errCount: exports.errCount,
                 killedCount: exports.killedCount,
-                doneCount: exports.doneCount
+                successCount: exports.successCount
             });
         }, 100);
     }
@@ -164,7 +174,7 @@ module.exports = function(initialProcs, options) {
             if (proc.running()) cpusAvail--;
 
         for (let x of new Array(cpusAvail).keys())
-            setTimeout(spawnNext, x * 100);
+            setTimeout(spawnNext, (x+1) * 50);
     }
 
     const exports = {
@@ -172,7 +182,7 @@ module.exports = function(initialProcs, options) {
         startedCount: 0,
         errCount: 0,
         killedCount: 0,
-        doneCount: 0,
+        successCount: 0,
         terminating: false,
         finalized: false,
         terminate,
@@ -180,7 +190,10 @@ module.exports = function(initialProcs, options) {
             addProc(...args);
             startSims();
         },
-        finalize: () => exports.finalized = true,
+        finalize: () => {
+            exports.finalized = true;
+            checkForIdle();
+        },
         on: (...args) => eventEmitter.on(...args)
     };
 

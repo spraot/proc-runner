@@ -26,7 +26,7 @@ runner.on('terminated', (data) => {
 
     console.log(data.errCount + ' processes failed');
     console.log(data.killedCount + ' processes terminated');
-    console.log(data.doneCount + ' processes finished successfully');
+    console.log(data.successCount + ' processes finished successfully');
 
     process.exit();
 });
