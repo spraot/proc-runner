@@ -21,5 +21,5 @@ module.exports = function(runner) {
     runner.on('processError', (proc, error) => setStatus(proc, 'Failed: ' + error));
 
     term_ctrl.onCtrlC(() => runner.terminate('Ctrl-C pressed, stopping all processes...'));
-    runner.on('terminating', () => term_ctrl.restore());
+    runner.prependListener('terminated', () => term_ctrl.restore());
 };

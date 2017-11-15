@@ -4,64 +4,77 @@
 
 const EventEmitter = require('events');
 const concurrency = require('os').cpus().length;
+const child_process = require('child_process');
 const startTimeout = 5000;
 const procTimeout = 2*60*1000;
 
-module.exports = function(initialProcs, options) {
-    const spawn = require('child_process').spawn; // Here for testing
+module.exports = (...args) => new ProcRunner(...args);
 
-    options = options || {};
-    const eventEmitter = new EventEmitter();
-    const procs = [];
+class ProcRunner extends EventEmitter {
+    constructor(options) {
+        super();
+        options = options || {};
+        this.cpuCount = options.cpuCount || concurrency;
+        this.startedCount = 0;
+        this.errCount = 0;
+        this.killedCount = 0;
+        this.successCount = 0;
+        this.doneCount = 0;
+        this.procs = [];
+        if (options.printStatus) require('./add-terminal-status')(this);
+    }
 
-    function addProc(newProc) {
-        if (Array.isArray(newProc)) return newProc.forEach(addProc);
+    addProc(newProc) {
+        if (Array.isArray(newProc)) return newProc.forEach(x => this.addProc(x));
 
         const proc = {
             exec: newProc.exec,
             name: newProc.name || newProc.exec,
             args: newProc.args || [],
-            inx: procs.length+1,
-            toString: () => `[${newProc.inx}] ${newProc.name}`,
+            inx: this.procs.length,
+            toString: () => `[${proc.inx+1}] ${proc.name}`,
         };
 
-        proc.ready = () => !exports.terminating && !proc.started && !proc.done && !proc.terminated;
+        proc.ready = () => !this.terminating && !proc.started && !proc.done && !proc.terminated;
         proc.running = () => proc.started && !proc.done && !proc.terminated;
         proc.terminate = () => false;
 
         if (typeof (proc.exec) !== 'string')
             throw new Error(`Command for process ${proc.inx} (${proc.name}) is not a string/path`);
 
-        procs.push(proc);
+        this.procs.push(proc);
+        this.startSims();
     }
 
-    function spawnNext() {
-        const next = procs.find(x => x.ready());
+    spawnNext() {
+        if (this.startedCount-this.doneCount >= this.cpuCount) return;
+        const next = this.procs.find(x => x.ready());
         if (!next) return;
 
         next.started = true;
         next.lastDataLine = '';
-        exports.startedCount++;
+        this.startedCount++;
         let hasSentData = false;
         let dataBuffer = '';
 
-        eventEmitter.emit('processStarted', next);
+        this.emit('processStarted', next);
 
         let process;
         try {
-            process = spawn(next.exec, next.args, {stdio: 'pipe'});
-            process.on('close', onClose);
-            process.on('error', onError);
-            process.stdout.on('data', onData);
-            process.stderr.on('data', onData);
+            process = child_process.spawn(next.exec, next.args, {stdio: 'pipe'});
+            process.on('close', onClose.bind(this));
+            process.on('error', onError.bind(this));
+            process.stdout.on('data', onData.bind(this));
+            process.stderr.on('data', onData.bind(this));
         } catch (e) {
-            onData('Could not start - '+e.message+'\n');
-            onClose(1);
+            onData.bind(this)('Could not start - ' + e.message + '\n');
+            onClose.bind(this)(1);
+            return false;
         }
 
         setTimeout(() => {
             if (!hasSentData && !next.error && process.exitCode === null) {
-                next.error = 'timed out waiting for response from '+next.exec;
+                next.error = 'timed out waiting for response from ' + next.exec;
                 next.terminate();
             }
         }, startTimeout);
@@ -88,26 +101,23 @@ module.exports = function(initialProcs, options) {
 
             next.done = true;
 
-            if (dataBuffer) onData('\n');
+            if (dataBuffer) onData.bind(this)('\n');
 
             if (code === 0) {
-                eventEmitter.emit('processSuccess', next);
+                this.successCount++;
+                this.emit('processSuccess', next);
             } else if (process && process.killed && !next.error) {
-                eventEmitter.emit('processTerminated', next);
+                this.killedCount++;
+                this.emit('processTerminated', next);
             } else {
+                this.errCount++;
                 next.error = next.error || next.lastDataLine;
-                eventEmitter.emit('processError', next, next.error);
+                this.emit('processError', next, next.error);
             }
-            eventEmitter.emit('processDone', next);
+            this.doneCount++;
+            this.emit('processDone', next);
 
-            if (next.error !== undefined)
-                exports.errCount++;
-            else if (next.terminated)
-                exports.killedCount++;
-            else if (next.done)
-                exports.successCount++;
-
-            checkForIdle();
+            this.checkForIdle();
         }
 
         function onData(chunk) {
@@ -123,7 +133,7 @@ module.exports = function(initialProcs, options) {
                 dataBuffer = chunk[1];
             }
 
-            eventEmitter.emit('processData', next, chunk);
+            this.emit('processData', next, chunk);
         }
 
         next.terminate = () => {
@@ -136,70 +146,45 @@ module.exports = function(initialProcs, options) {
         return true;
     }
 
-    function checkForIdle() {
-        if (!exports.terminating && !spawnNext() && !procs.some(x => !x.done)) {
-            if (exports.finalized) {
-                terminate();
-            } else {
-                eventEmitter.emit('idle');
-            }
-        }
+    startSims() {
+        let cpuAvail = this.cpuCount;
+        for (const proc of this.procs)
+            if (proc.running()) cpuAvail--;
+
+        for (let x of new Array(cpuAvail).keys())
+            setTimeout(this.spawnNext.bind(this), (x + 1) * 50);
     }
 
-    function terminate(reason) {
-        exports.terminating = true;
+    terminate(reason) {
+        this.terminating = true;
+        this.emit('terminating');
 
-        for (const proc of procs) {
+        for (const proc of this.procs) {
             if (proc.running)
                 proc.terminate();
         }
 
-        eventEmitter.emit('terminating');
-
-        setTimeout(function () {
-            eventEmitter.emit('terminated', {
-                terminatedReason: reason,
-                startedCount: exports.startedCount,
-                errCount: exports.errCount,
-                killedCount: exports.killedCount,
-                successCount: exports.successCount
-            });
-        }, 100);
-    }
-
-    function startSims() {
-        let cpusAvail = exports.cpuCount;
-        for (const proc of procs)
-            if (proc.running()) cpusAvail--;
-
-        for (let x of new Array(cpusAvail).keys())
-            setTimeout(spawnNext, (x+1) * 50);
-    }
-
-    const exports = {
-        cpuCount: options.cpuCount || concurrency,
-        startedCount: 0,
-        errCount: 0,
-        killedCount: 0,
-        successCount: 0,
-        terminating: false,
-        finalized: false,
-        terminate,
-        addProc: (...args) => {
-            addProc(...args);
-            startSims();
-        },
-        finalize: () => {
-            exports.finalized = true;
-            checkForIdle();
-        },
-        on: (...args) => eventEmitter.on(...args)
+        this.emit('terminated', reason);
     };
 
-    if (options.printStatus) require('./add-terminal-status')(exports);
+    checkForIdle() {
+        if (!this.terminating && !this.spawnNext() && !this.procs.some(x => !x.done)) {
+            if (this.finalized) {
+                this.terminate();
+            } else {
+                this.emit('idle');
+            }
+        }
+    }
 
-    addProc(initialProcs);
-    startSims();
+    finalize() {
+        this.finalized = true;
+        this.checkForIdle();
+    }
+}
 
-    return exports
-};
+class Proc {
+    constructor() {
+
+    }
+}

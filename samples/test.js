@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const proc_count = 6;
+const proc_count = 15;
 const procs = [];
 let i = 0;
 while (procs.length<proc_count) {
@@ -16,24 +16,32 @@ procs[1].args = undefined;
 
 console.log(`Running ${procs.length} subprocesses...\n`);
 
-const runner = require('../run')(procs.slice(0,4),{printStatus: true});
+const runner = require('../run')({printStatus: true});
+runner.addProc(procs.slice(0,4));
 
-runner.on('terminated', (data) => {
-    if (data.terminatedReason)
-        console.log('\nBatch terminated: '+data.terminatedReason);
+runner.on('terminated', function(reason) {
+    if (reason)
+        console.log('\nBatch terminated: '+reason);
     else
         console.log('\nAll processes done');
 
-    console.log(data.errCount + ' processes failed');
-    console.log(data.killedCount + ' processes terminated');
-    console.log(data.successCount + ' processes finished successfully');
+    console.log(this.errCount + ' processes failed');
+    console.log(this.killedCount + ' processes terminated');
+    console.log(this.successCount + ' processes finished successfully');
 
-    process.exit();
+    setTimeout(() => process.exit(), 100);
 });
 
-setTimeout(() => console.log('\nWaiting for first batch of processes to finish...\n'), 5000);
+runner.on('processStarted', function(proc) {
+    if (proc.inx === 3) {
+        console.log('\nWaiting for first batch of processes to finish before adding more...\n')
+    }
+});
 
-setTimeout(() => {
+runner.once('idle', addMore);
+
+function addMore() {
+    runner.cpuCount = 2;
     runner.addProc(procs.slice(4));
     runner.finalize();
-}, 15000);
+}
