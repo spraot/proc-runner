@@ -11,7 +11,6 @@ module.exports = function(initialProcs, options) {
     const spawn = require('child_process').spawn; // Here for testing
 
     options = options || {};
-    const term_ctrl = require('./log')();
     const eventEmitter = new EventEmitter();
     const procs = [];
 
@@ -22,7 +21,8 @@ module.exports = function(initialProcs, options) {
             exec: newProc.exec,
             name: newProc.name || newProc.exec,
             args: newProc.args || [],
-            inx: procs.length+1
+            inx: procs.length+1,
+            toString: () => `[${newProc.inx}] ${newProc.name}`,
         };
 
         proc.ready = () => !exports.terminating && !proc.started && !proc.done && !proc.terminated;
@@ -40,12 +40,11 @@ module.exports = function(initialProcs, options) {
         if (!next) return;
 
         next.started = true;
+        next.lastDataLine = '';
         exports.startedCount++;
-        let lastStatus = '';
-        let stdoutBuffer = '';
+        let hasSentData = false;
+        let dataBuffer = '';
 
-        const statusLine = term_ctrl.createStatusLine();
-        setStatus('Started');
         eventEmitter.emit('processStarted', next);
 
         let process;
@@ -56,13 +55,12 @@ module.exports = function(initialProcs, options) {
             process.stdout.on('data', onData);
             process.stderr.on('data', onData);
         } catch (e) {
-            next.done = true;
-            onError(e);
+            onData('Could not start - '+e.message+'\n');
             onClose(1);
         }
 
         setTimeout(() => {
-            if (lastStatus === 'Started') {
+            if (!hasSentData && !next.error && process.exitCode === null) {
                 next.error = 'timed out waiting for response from '+next.exec;
                 next.terminate();
             }
@@ -75,30 +73,29 @@ module.exports = function(initialProcs, options) {
             }
         }, procTimeout);
 
-        function setStatus(status) {
-            lastStatus = status;
-            statusLine(`[${next.inx}] ${next.name}: ${status}`);
-        }
-
         function onError(err) {
-            setStatus('Could not start - '+err.message);
+            onData(err);
+            // onClose may or may not be called after onError
+            // we'll wait a bit, and if it doesn't look like onClose has been called, we do it here
+            setTimeout(() => {if (!next.done) onClose()}, 100);
         }
 
         function onClose(code) {
-            next.done = true;
-            next.exitCode = code;
+            if (code !== null)
+                next.exitCode = code;
+            if (next.done)
+                return;
 
-            if (stdoutBuffer) setStatus(stdoutBuffer);
+            next.done = true;
+
+            if (dataBuffer) onData('\n');
 
             if (code === 0) {
-                setStatus('Done!');
                 eventEmitter.emit('processSuccess', next);
             } else if (process && process.killed && !next.error) {
-                setStatus('Terminated');
                 eventEmitter.emit('processTerminated', next);
             } else {
-                next.error = next.error || lastStatus;
-                setStatus('Failed: ' + next.error);
+                next.error = next.error || next.lastDataLine;
                 eventEmitter.emit('processError', next, next.error);
             }
             eventEmitter.emit('processDone', next);
@@ -114,15 +111,19 @@ module.exports = function(initialProcs, options) {
         }
 
         function onData(chunk) {
+            hasSentData = true;
+
             chunk = chunk.toString().split('\n').splice(-2);
             if (chunk.length === 0) return;
 
-            stdoutBuffer += chunk[0];
+            dataBuffer += chunk[0];
 
             if (chunk.length === 2) {
-                setStatus(stdoutBuffer);
-                stdoutBuffer = chunk[1];
+                next.lastDataLine = dataBuffer;
+                dataBuffer = chunk[1];
             }
+
+            eventEmitter.emit('processData', next, chunk);
         }
 
         next.terminate = () => {
@@ -140,7 +141,7 @@ module.exports = function(initialProcs, options) {
             if (exports.finalized) {
                 terminate();
             } else {
-                eventEmitter.emit('idle', next);
+                eventEmitter.emit('idle');
             }
         }
     }
@@ -153,7 +154,7 @@ module.exports = function(initialProcs, options) {
                 proc.terminate();
         }
 
-        term_ctrl.restore();
+        eventEmitter.emit('terminating');
 
         setTimeout(function () {
             eventEmitter.emit('terminated', {
@@ -165,8 +166,6 @@ module.exports = function(initialProcs, options) {
             });
         }, 100);
     }
-
-    term_ctrl.onCtrlC(() => terminate('Ctrl-C pressed, stopping all processes...'));
 
     function startSims() {
         let cpusAvail = exports.cpuCount;
@@ -196,6 +195,8 @@ module.exports = function(initialProcs, options) {
         },
         on: (...args) => eventEmitter.on(...args)
     };
+
+    if (options.printStatus) require('./add-terminal-status')(exports);
 
     addProc(initialProcs);
     startSims();

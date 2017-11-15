@@ -16,7 +16,7 @@ procs[1].args = undefined;
 
 console.log(`Running ${procs.length} subprocesses...\n`);
 
-const runner = require('../run')(procs.slice(0,4));
+const runner = require('../run')(procs.slice(0,4),{printStatus: true});
 
 runner.on('terminated', (data) => {
     if (data.terminatedReason)

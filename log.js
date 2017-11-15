@@ -56,8 +56,10 @@ module.exports = function() {
     exports.createStatusLine = (initialTxt) => {
         if (curCol !== 1) console.log();
         const lineNo = curLine;
-        console.log(initialTxt || '');
-        return (txt) => {
+        console.log();
+        const updateStatus = (txt) => {
+            txt = txt.replace(/\n/g,'');
+            updateStatus.toString = () => txt;
             cursorMoved = true;
             term.saveCursor();
             term.previousLine(curLine - lineNo);
@@ -68,7 +70,9 @@ module.exports = function() {
 
             term.restoreCursor();
             cursorMoved = false;
-        }
+        };
+        if (initialTxt) updateStatus(initialTxt);
+        return updateStatus;
     };
 
     exports.onCtrlC = (callback) => {
