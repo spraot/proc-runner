@@ -17,19 +17,54 @@ describe('runner', function() {
 
     it('should call subprocesses and emit events correctly', function(done) {
         const runner = procRunner();
-        runner.addProc(procs);
+
         let doneCount = 0;
         let successCount = 0;
         runner.on('processDone', () => {doneCount++});
         runner.on('processSuccess', () => {successCount++});
         runner.on('terminated', function() {
-            assert.equal(this.successCount, procs.length);
             assert.equal(mySpawn.calls.length, procs.length);
+            assert.equal(this.successCount, procs.length);
             assert.equal(doneCount, procs.length);
             assert.equal(successCount, procs.length);
             assert.equal(mySpawn.calls[0].command, procs[0].exec);
             done();
         });
+
+        runner.addProc(procs);
+        runner.finalize();
+    });
+
+    it('should terminate processes correctly', function(done) {
+        mySpawn.sequence.add(function (cb) {
+            setTimeout(() => cb(1), 100000);
+        });
+        mySpawn.sequence.add(function (cb) {
+            setTimeout(() => cb(0), 100000);
+        });
+        mySpawn.setSignals({SIGTERM: true});
+
+        const runner = procRunner();
+        let errorCount = 0;
+        let doneCount = 0;
+        let successCount = 0;
+        let terminatedCount = 0;
+        runner.on('processDone', () => {doneCount++});
+        runner.on('processError', () => {errorCount++});
+        runner.on('processTerminated', () => {terminatedCount++});
+        runner.on('processSuccess', () => {successCount++});
+        runner.on('terminated', function() {
+            assert.equal(mySpawn.calls.length, procs.length);
+            assert.equal(doneCount, procs.length);
+            assert.equal(successCount, procs.length-2);
+            assert.equal(terminatedCount, 2);
+            assert.equal(errorCount, 0);
+            assert.equal(mySpawn.calls[0].command, procs[0].exec);
+            done();
+        });
+        setTimeout(() => runner.terminate(), 100);
+
+        runner.addProc(procs);
         runner.finalize();
     });
 
@@ -46,7 +81,6 @@ describe('runner', function() {
         mySpawn.sequence.add({throws:new Error(errMsg)});
 
         const runner = procRunner();
-        runner.addProc(procs);
 
         let errorCount = 0;
         let doneCount = 0;
@@ -68,6 +102,8 @@ describe('runner', function() {
             assert.equal(successCount, procs.length-3);
             done();
         });
+
+        runner.addProc(procs);
         runner.finalize();
     });
 
@@ -79,5 +115,35 @@ describe('runner', function() {
         assert.throws(() => runner.addProc(badproc));
 
         done();
+    });
+
+    it('should handle timeouts correctly', function(done) {
+        const runner = procRunner();
+
+        mySpawn.setSignals({SIGTERM: true});
+        mySpawn.sequence.add(function (cb) {
+            setTimeout(() => cb(0), 1000);
+        });
+        mySpawn.sequence.add(function (cb) {
+            setTimeout(() => cb(0), 1000);
+        });
+
+        let errorCount = 0;
+        runner.on('processError', (_, err) => {
+            errorCount++;
+
+            if (_.inx === 0)
+                assert.equal(err, 'process timed out');
+            else if (_.inx === 1)
+                assert.equal(err, 'timed out waiting for response from '+procs[0].exec);
+        });
+        runner.on('terminated', function() {
+            assert.equal(errorCount, 2);
+            done();
+        });
+
+        runner.addProc(Object.assign({},procs[0],{timeout: 100}));
+        runner.addProc(Object.assign({},procs[0],{startTimeout: 100}));
+        runner.finalize();
     });
 });
