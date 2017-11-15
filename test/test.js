@@ -5,17 +5,19 @@ const mockSpawn = require('mock-spawn');
 const procs = [...(new Array(4).keys())].map(i => ({name: 'process_'+(i+1), exec: 'node', args: [i]}));
 
 describe('runner', function() {
-    let mySpawn;
 
-    beforeEach(function () {
+    let mySpawn, ProcRunner;
+
+    beforeEach(() => {
         mySpawn = mockSpawn();
         mySpawn.setDefault(mySpawn.simple(0));
         require('child_process').spawn = mySpawn;
+        ProcRunner = require('../run');
     });
 
     describe('basic example', function() {
         it('should call subprocesses and emit events correctly', function(done) {
-            const runner = require('../run')(procs);
+            const runner = ProcRunner(procs);
             let doneCount = 0;
             let successCount = 0;
             runner.on('processDone', () => {doneCount++});
@@ -43,14 +45,17 @@ describe('runner', function() {
             });
             mySpawn.sequence.add({throws:new Error(errMsg)});
 
-            const runner = require('../run')(procs);
+            const runner = ProcRunner(procs);
 
             let errorCount = 0;
             let doneCount = 0;
             let successCount = 0;
             runner.on('processError', (_, err) => {
                 errorCount++;
-                assert.equal(err, errMsg);
+                if (_.inx === 3)
+                    assert.equal(err, 'Could not start - '+errMsg, 'process '+_.inx);
+                else
+                    assert.equal(err, errMsg, 'process '+_.inx);
             });
             runner.on('processDone', () => {doneCount++});
             runner.on('processSuccess', () => {successCount++});
@@ -69,7 +74,7 @@ describe('runner', function() {
             // Set first exec to undefined:
             const badproc = Object.assign({},procs[0],{exec: undefined});
 
-            assert.throws(() => require('../run')(badproc));
+            assert.throws(() => ProcRunner(badproc));
 
             done();
         });

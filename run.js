@@ -93,7 +93,7 @@ module.exports = function(initialProcs, options) {
             if (code === 0) {
                 setStatus('Done!');
                 eventEmitter.emit('processSuccess', next);
-            } else if (process.killed && !next.error) {
+            } else if (process && process.killed && !next.error) {
                 setStatus('Terminated');
                 eventEmitter.emit('processTerminated', next);
             } else {
