@@ -38,10 +38,8 @@ runner.on('processStarted', function(proc) {
     }
 });
 
-runner.once('idle', addMore);
-
-function addMore() {
+runner.once('idle', () => {
     runner.cpuCount = 2;
     runner.addProc(procs.slice(4));
     runner.finalize();
-}
+});
