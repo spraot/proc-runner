@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-const proc_count = 15;
+const proc_count = 20;
 const procs = [];
 let i = 0;
 while (procs.length<proc_count) {
-    const len = Math.random()*20+10;
+    const len = Math.random()*2+4;
     i++;
     procs.push({
     	name: 'process_'+i,
