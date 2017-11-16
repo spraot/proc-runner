@@ -1,6 +1,6 @@
 # proc-runner
 
-Run child processes synchronously and print nice status to terminal. Designed to print and update status nicely inline with other console output. All console output is abstracted so you can easily set printStatus: false and implement your own logger (see add-terminal-status.js for inspiration). 
+Run child processes synchronously and print nice status to terminal. Designed to print and update status nicely inline with other console output. All console output is abstracted so you can easily set printStatus: false and implement your own logger (see status-handler.js for inspiration). 
 
 ## Usage
 

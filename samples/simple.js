@@ -3,7 +3,7 @@
 const proc_count = 10;
 console.log(`Running ${proc_count} subprocesses...\n`);
 
-const runner = require('../run')({printStatus: true});
+const runner = require('../lib/runner')({printStatus: true});
 for (const _ of new Array(proc_count))
     runner.addProc({
         name: 'long running',

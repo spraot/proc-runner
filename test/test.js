@@ -12,7 +12,7 @@ describe('runner', function() {
         mySpawn = mockSpawn();
         mySpawn.setDefault(mySpawn.simple(0));
         require('child_process').spawn = mySpawn;
-        procRunner = require('../run');
+        procRunner = require('../lib/runner');
     });
 
     it('should call subprocesses and emit events correctly', function(done) {
