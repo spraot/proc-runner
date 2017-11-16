@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const term = require('terminal-kit').terminal;
+const EventEmitter = require('events');
 
 function hook_stdout(callback) {
     let old_write = process.stdout.write;
@@ -18,6 +19,7 @@ function hook_stdout(callback) {
 module.exports = function() {
     term.grabInput();
     const unhook = hook_stdout(count_lines);
+    const emitter = new EventEmitter;
 
     let curLine = 1;
     let curCol = 1;
@@ -46,6 +48,7 @@ module.exports = function() {
     exports.curLine = () => curLine;
     exports.curCol = () => curCol;
     exports.restore = () => {
+        emitter.emit('unhook');
         term.grabInput(false);
         unhook();
     };
@@ -81,18 +84,19 @@ module.exports = function() {
         };
         if (initialTxt) updateStatus(initialTxt);
 
-        term.on('resize', () => updateStatus(updateStatus));
+        registerTermListener('resize', () => updateStatus());
 
         return updateStatus;
     };
 
     exports.onCtrlC = (callback) => {
-        term.on('key', function (name, matches, data) {
-            if (matches.indexOf('CTRL_C') >= 0) {
-                callback();
-            }
-        });
+        registerTermListener('key', (_, matches) => {if (matches.indexOf('CTRL_C') >= 0) callback();});
     };
+
+    function registerTermListener(name, fn) {
+        term.on(name, fn);
+        emitter.once('unhook', () => term.removeListener(name, fn));
+    }
 
     return exports;
 };

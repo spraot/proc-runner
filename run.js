@@ -177,7 +177,7 @@ function makeProcClass(options) {
 
             if (code === 0) {
                 this.emit('success');
-            } else if (this.process && (this.process.killed || this.process.signal === 'SIGTERM') && !this.error) {
+            } else if ((this.process && this.process.killed || this.terminated) && !this.error) {
                 this.emit('terminated');
             } else {
                 this.error = this.error || this.lastDataLine;
