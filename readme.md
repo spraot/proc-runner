@@ -1,5 +1,8 @@
 # proc-runner
 
+[![Node version](https://img.shields.io/npm/v/proc-runner.svg?style=flat)](https://www.npmjs.com/package/proc-runner)
+![Build](https://img.shields.io/travis/rachetfoot/proc-runner.svg)
+
 Run child processes synchronously and print nice status to terminal. Designed to print and update status nicely inline with other console output. All console output is abstracted so you can easily set printStatus: false and implement your own logger (see status-handler.js for inspiration). 
 
 ## Usage
