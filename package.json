@@ -2,7 +2,7 @@
   "name": "proc-runner",
   "version": "0.0.2",
   "description": "",
-  "main": "run.js",
+  "main": "lib/runner.js",
   "scripts": {
     "test": "mocha test/*.js"
   },
