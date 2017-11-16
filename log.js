@@ -20,6 +20,7 @@ module.exports = function() {
     term.grabInput();
     const unhook = hook_stdout(count_lines);
     const emitter = new EventEmitter;
+    emitter.setMaxListeners(0);
 
     let curLine = 1;
     let curCol = 1;
@@ -56,6 +57,8 @@ module.exports = function() {
         console.log(txt.split('\n').map((x, i) => x.slice(0, term.width - (i === 0 ? curCol - 1 : 0))).join('\n'));
     };
 
+    const statusLines = [];
+
     exports.createStatusLine = (initialTxt) => {
         if (curCol !== 1) console.log();
         const lineNo = curLine;
@@ -83,15 +86,21 @@ module.exports = function() {
             cursorMoved = false;
         };
         if (initialTxt) updateStatus(initialTxt);
-
-        registerTermListener('resize', () => updateStatus());
-
+        statusLines.push(updateStatus);
         return updateStatus;
     };
 
     exports.onCtrlC = (callback) => {
         registerTermListener('key', (_, matches) => {if (matches.indexOf('CTRL_C') >= 0) callback();});
     };
+
+    // If the terminal becomes wider, rewrite statuses that might have been truncated:
+    let lastWidth = term.width;
+    registerTermListener('resize', () => {
+        if (term.width > lastWidth)
+            statusLines.forEach(x => x());
+        lastWidth = term.width;
+    });
 
     function registerTermListener(name, fn) {
         term.on(name, fn);
