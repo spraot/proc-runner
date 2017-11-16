@@ -5,6 +5,8 @@
 
 Run child processes synchronously and print nice status to terminal. Designed to print and update status nicely inline with other console output. All console output is abstracted so you can easily set printStatus: false and implement your own logger (see status-handler.js for inspiration). 
 
+![simple example](https://raw.githubusercontent.com/rachetfoot/proc-runner/master/samples/simple.gif "Simple Example")
+
 ## Usage
 
 Get runner:
@@ -15,7 +17,19 @@ Add commands:
 
 > runner.addProc({name: 'display_name', exec: 'node', args: ['-e', "process.exit(0)"]});
 
-Only exec is required. Two other options are timeout and startTimeout (given in ms). Set these to 0 for no timeout.
+The argument to addProc can be an object or array of objects. Fields available for use are:
+
+* exec: path to executable (required)
+* name: display name
+* args: arguments to pass to executable (array of strings)
+* timeout: time out if process is not finished faster than this (ms) - set to 0 for no time out
+* startTimeout: time out if process does not write to stdout or finish faster than this (ms) - set to 0 for no time out
+* onStarted: function to call on started event for this process
+* onDone: function to call on done event for this process
+* onError: function to call on error for this process
+* onTerminated: function to call on terminated event for this process
+* onSuccess: function to call on success event for this process
+* onData: function to call on data event for this process
 
 Allow the runner to terminate itself when idle instead of emitting idle event:
 
@@ -36,13 +50,11 @@ runner.on('terminated', () => console.log('process runner terminated, stopping p
 
 ## Examples
 
-![simple example](https://raw.githubusercontent.com/rachetfoot/proc-runner/master/samples/simple.gif "Simple Example")
-
 More complicated example showing error handling, processes timing out, changing concurrent process count, and waiting for current processes to complete before adding more: 
 
 ![other example](https://raw.githubusercontent.com/rachetfoot/proc-runner/master/samples/test.gif "Other Example")
 
-Here's the code for simple example, for more examples see the samples folder in this repository.
+Here's the code for simple example above, for more examples see the samples folder in this repository.
 
 ```javascript
 const proc_count = 10;
