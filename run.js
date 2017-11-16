@@ -5,8 +5,8 @@
 const EventEmitter = require('events');
 const concurrency = require('os').cpus().length;
 const child_process = require('child_process');
-const startTimeout = 5000;
-const procTimeout = 2*60*1000;
+const defaultStartTimeout = 5000;
+const defaultTimeout = 2*60*1000;
 
 module.exports = (...args) => new ProcRunner(...args);
 
@@ -21,6 +21,7 @@ class ProcRunner extends EventEmitter {
         this.successCount = 0;
         this.doneCount = 0;
         this.procs = [];
+        this.Proc = makeProcClass(options);
         if (options.printStatus) require('./add-terminal-status')(this);
     }
 
@@ -29,9 +30,10 @@ class ProcRunner extends EventEmitter {
         if (!Array.isArray(newProcs)) newProcs = [newProcs];
 
         for (const newProc of newProcs) {
-            // Add index and create Proc object
-            const proc = new Proc(Object.assign({}, newProc, {inx: this.procs.length}));
+            // Add index and create Proc object:
+            const proc = new this.Proc(newProc);
 
+            // Add listeners:
             proc.on('started', function () {
                 _this.startedCount++;
                 _this.emit('processStarted', this)
@@ -102,118 +104,126 @@ class ProcRunner extends EventEmitter {
     }
 }
 
-class Proc extends EventEmitter {
-    constructor(data) {
-        super();
-        this.inx = data.inx;
-        this.exec = data.exec;
-        this.name = data.name || data.exec;
-        this.args = data.args || [];
-        this.timeout = data.timeout || procTimeout;
-        this.startTimeout = data.startTimeout || startTimeout;
-        this.lastDataLine = '';
-        this.hasSentData = false;
-        this.dataBuffer = '';
+function makeProcClass(options) {
+    let inx = 0;
 
-        if (typeof (this.exec) !== 'string')
-            throw new Error(`Command for process ${this} is not a string/path`);
-    }
+    class Proc extends EventEmitter {
+        constructor(data) {
+            super();
 
-    spawn() {
-        this.started = true;
+            // process setup:
+            this.inx = inx++;
+            this.exec = data.exec;
+            this.name = data.name || data.exec;
+            this.args = data.args || [];
+            this.timeout = data.timeout || options.timeout || defaultTimeout;
+            this.startTimeout = data.startTimeout || options.startTimeout || defaultStartTimeout;
 
-        try {
-            this.process = child_process.spawn(this.exec, this.args, {stdio: 'pipe'});
-            this.process.on('close', this.onClose.bind(this));
-            this.process.on('error', this.onError.bind(this));
-            this.process.stdout.on('data', this.onData.bind(this));
-            this.process.stderr.on('data', this.onData.bind(this));
-        } catch (e) {
-            this.onData.bind(this)('Could not start - ' + e.message + '\n');
-            this.onClose.bind(this)(1);
-            return false;
+            // initial values:
+            this.lastDataLine = '';
+            this.hasSentData = false;
+            this.dataBuffer = '';
+
+            if (typeof (this.exec) !== 'string')
+                throw new Error(`Command for process ${this} is not a string/path`);
         }
 
-        setTimeout(() => {
-            if (!this.hasSentData && !this.done) {
-                this.error = 'timed out waiting for response from ' + this.exec;
-                this.terminate();
+        spawn() {
+            this.started = true;
+
+            try {
+                this.process = child_process.spawn(this.exec, this.args, {stdio: 'pipe'});
+                this.process.on('close', (...args) => this.onClose(...args));
+                this.process.on('error', (...args) => this.onError(...args));
+                this.process.stdout.on('data', (...args) => this.onData(...args));
+                this.process.stderr.on('data', (...args) => this.onData(...args));
+            } catch (e) {
+                this.onData('Could not start - ' + e.message + '\n');
+                this.onClose(1);
+                return false;
             }
-        }, this.startTimeout);
 
-        setTimeout(() => {
-            if (this.running()) {
-                this.error = 'process timed out';
-                this.terminate();
+            setTimeout(() => {
+                if (!this.hasSentData && !this.done) {
+                    this.error = 'timed out waiting for response from ' + this.exec;
+                    this.terminate();
+                }
+            }, this.startTimeout);
+
+            setTimeout(() => {
+                if (this.running()) {
+                    this.error = 'process timed out';
+                    this.terminate();
+                }
+            }, this.timeout);
+
+            this.emit('started');
+        }
+
+        onError(err) {
+            this.onData(err);
+            this.onClose(null);
+        }
+
+        onClose(code) {
+            if (code !== null)
+                this.exitCode = code;
+            if (this.done)
+                return;
+
+            this.done = true;
+
+            if (this.dataBuffer) this.onData('\n');
+
+            if (code === 0) {
+                this.emit('success');
+            } else if (this.process && (this.process.killed || this.process.signal === 'SIGTERM') && !this.error) {
+                this.emit('terminated');
+            } else {
+                this.error = this.error || this.lastDataLine;
+                this.emit('error', this.error);
             }
-        }, this.timeout);
-
-        this.emit('started');
-    }
-
-    onError(err) {
-        this.onData(err);
-        this.onClose(null);
-    }
-
-    onClose(code) {
-        if (code !== null)
-            this.exitCode = code;
-        if (this.done)
-            return;
-
-        this.done = true;
-
-        if (this.dataBuffer) this.onData('\n');
-
-        if (code === 0) {
-            this.emit('success');
-        } else if (this.process && (this.process.killed || this.process.signal === 'SIGTERM') && !this.error) {
-            this.emit('terminated');
-        } else {
-            this.error = this.error || this.lastDataLine;
-            this.emit('error', this.error);
-        }
-        this.emit('done');
-    }
-
-    onData(chunk) {
-        this.hasSentData = true;
-
-        chunk = chunk.toString().split('\n').splice(-2);
-        if (chunk.length === 0) return;
-
-        this.dataBuffer += chunk[0];
-
-        if (chunk.length === 2) {
-            this.lastDataLine = this.dataBuffer;
-            this.dataBuffer = chunk[1];
+            this.emit('done');
+            this.process = null;
         }
 
-        this.emit('data', this, chunk);
-    }
+        onData(chunk) {
+            this.hasSentData = true;
 
-    toString() {
-        if (this.inx !== undefined)
+            chunk = chunk.toString().split('\n').splice(-2);
+            if (chunk.length === 0) return;
+
+            this.dataBuffer += chunk[0];
+
+            if (chunk.length === 2) {
+                this.lastDataLine = this.dataBuffer;
+                this.dataBuffer = chunk[1];
+            }
+
+            this.emit('data', this, chunk);
+        }
+
+        toString() {
             return `[${this.inx + 1}] ${this.name}`;
-        else
-            return this.name;
-    }
+        }
 
-    ready() {
-        return !this.started && !this.done && !this.terminated;
-    }
+        ready() {
+            return !this.started && !this.done && !this.terminated;
+        }
 
-    running() {
-        return this.started && !this.done && !this.terminated;
-    }
+        running() {
+            return this.started && !this.done && !this.terminated;
+        }
 
-    terminate() {
-        if (this.running()) {
-            this.process.kill();
-            return this.terminated = true;
-        } else {
-            return false;
+        terminate() {
+            if (this.running()) {
+                this.process.kill();
+                return this.terminated = true;
+            } else {
+                return false;
+            }
         }
     }
+
+    return Proc;
 }
