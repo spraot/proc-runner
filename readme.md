@@ -1,7 +1,7 @@
 # proc-runner
 
 [![Node version](https://img.shields.io/npm/v/proc-runner.svg?style=flat)](https://www.npmjs.com/package/proc-runner)
-![Build](https://img.shields.io/travis/rachetfoot/proc-runner.svg)
+[![Build](https://img.shields.io/travis/rachetfoot/proc-runner.svg)](https://travis-ci.org/rachetfoot/proc-runner)
 
 Run child processes synchronously and print nice status to terminal. Designed to print and update status nicely inline with other console output. All console output is abstracted so you can easily set printStatus: false and implement your own logger (see status-handler.js for inspiration). 
 
@@ -36,11 +36,11 @@ runner.on('terminated', () => console.log('process runner terminated, stopping p
 
 ## Examples
 
-![simple example](samples/simple.gif "Simple Example")
+![simple example](https://raw.githubusercontent.com/rachetfoot/proc-runner/master/samples/simple.gif "Simple Example")
 
 More complicated example showing error handling, processes timing out, changing concurrent process count, and waiting for current processes to complete before adding more: 
 
-![other example](samples/test.gif "Other Example")
+![other example](https://raw.githubusercontent.com/rachetfoot/proc-runner/master/samples/test.gif "Other Example")
 
 Here's the code for simple example, for more examples see the samples folder in this repository.
 
@@ -71,4 +71,7 @@ runner.on('terminated', function(reason) {
 
 runner.finalize();
 ```
+## Todo
 
+* Remove terminal-kit dependency or make optional, maybe move terminal output to separate package
+* Add coverage badge
