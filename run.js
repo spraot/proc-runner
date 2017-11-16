@@ -107,6 +107,13 @@ class ProcRunner extends EventEmitter {
 function makeProcClass(options) {
     let inx = 0;
 
+    function getFirstDefined(...args) {
+        for (const x of args) {
+            if (x !== undefined)
+                return x;
+        }
+    }
+
     class Proc extends EventEmitter {
         constructor(data) {
             super();
@@ -116,8 +123,8 @@ function makeProcClass(options) {
             this.exec = data.exec;
             this.name = data.name || data.exec;
             this.args = data.args || [];
-            this._timeout = data.timeout || options.timeout || defaultTimeout;
-            this._startTimeout = data.startTimeout || options.startTimeout || defaultStartTimeout;
+            this._timeout = getFirstDefined(data.timeout, options.timeout, defaultTimeout);
+            this._startTimeout = getFirstDefined(data.startTimeout, options.startTimeout, defaultStartTimeout);
 
             // initial values:
             this._lastDataLine = '';
@@ -143,19 +150,21 @@ function makeProcClass(options) {
                 return false;
             }
 
-            setTimeout(() => {
-                if (!this._hasSentData && !this.done) {
-                    this.error = 'timed out waiting for response from ' + this.exec;
-                    this.terminate();
-                }
-            }, this._startTimeout);
+            if (this._startTimeout)
+                setTimeout(() => {
+                    if (!this._hasSentData && !this.done) {
+                        this.error = 'timed out waiting for response from ' + this.exec;
+                        this.terminate();
+                    }
+                }, this._startTimeout);
 
-            setTimeout(() => {
-                if (this.running()) {
-                    this.error = 'process timed out';
-                    this.terminate();
-                }
-            }, this._timeout);
+            if (this._timeout)
+                setTimeout(() => {
+                    if (this.running()) {
+                        this.error = 'process timed out';
+                        this.terminate();
+                    }
+                }, this._timeout);
 
             this.emit('started');
         }
