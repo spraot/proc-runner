@@ -58,8 +58,15 @@ module.exports = function() {
         const lineNo = curLine;
         console.log();
         const updateStatus = (txt) => {
-            txt = txt.replace(/\n/g,'');
-            updateStatus.toString = () => txt;
+            // Get status text
+            if (txt === undefined && updateStatus.toString)
+                txt = updateStatus;
+            else
+                updateStatus.toString = () => txt;
+
+            txt = txt.toString().replace(/\n/g,'');
+
+            // Move cursor
             cursorMoved = true;
             term.saveCursor();
             term.previousLine(curLine - lineNo);
@@ -68,10 +75,14 @@ module.exports = function() {
             process.stdout.write(txt.slice(0, term.width));
             term.eraseLineAfter();
 
+            // Move cursor back
             term.restoreCursor();
             cursorMoved = false;
         };
         if (initialTxt) updateStatus(initialTxt);
+
+        term.on('resize', () => updateStatus(updateStatus));
+
         return updateStatus;
     };
 
