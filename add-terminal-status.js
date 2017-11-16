@@ -15,7 +15,7 @@ module.exports = function(runner) {
         statusLines[proc].buffer = '';
         setStatus(proc, 'Started');
     });
-    runner.on('processData', proc => setStatus(proc, proc.lastDataLine));
+    runner.on('processData', proc => setStatus(proc, proc._lastDataLine));
     runner.on('processSuccess', proc => setStatus(proc, 'Done!'));
     runner.on('processTerminated', proc => setStatus(proc, 'Terminated'));
     runner.on('processError', (proc, error) => setStatus(proc, 'Failed: ' + error));
