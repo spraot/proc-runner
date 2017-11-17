@@ -4,8 +4,10 @@ const proc_length = parseInt(process.argv[2]);
 let progress = 0.0;
 
 const show_progress = () => {
-    if (progress >= proc_length)
+    if (progress >= proc_length) {
+    	console.log('\n');
         process.exit();
+    }
 
 	console.log('T='+progress.toFixed(2)+'s Progress='+(progress/proc_length*100).toFixed(0)+'%');
 
