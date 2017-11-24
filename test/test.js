@@ -31,7 +31,7 @@ describe('runner', function() {
             done();
         });
 
-        runner.addProc(procs);
+        runner.add(procs);
         runner.finalize();
     });
 
@@ -64,7 +64,7 @@ describe('runner', function() {
         });
         setTimeout(() => runner.terminate(), 100);
 
-        runner.addProc(procs);
+        runner.add(procs);
         runner.finalize();
     });
 
@@ -103,7 +103,7 @@ describe('runner', function() {
             done();
         });
 
-        runner.addProc(procs);
+        runner.add(procs);
         runner.finalize();
     });
 
@@ -112,7 +112,7 @@ describe('runner', function() {
         const badproc = Object.assign({},procs[0],{exec: undefined});
 
         const runner = procRunner();
-        assert.throws(() => runner.addProc(badproc));
+        assert.throws(() => runner.add(badproc));
 
         done();
     });
@@ -142,8 +142,8 @@ describe('runner', function() {
             done();
         });
 
-        runner.addProc(Object.assign({},procs[0],{timeout: 100}));
-        runner.addProc(Object.assign({},procs[0],{startTimeout: 100}));
+        runner.add(Object.assign({},procs[0],{timeout: 100}));
+        runner.add(Object.assign({},procs[0],{startTimeout: 100}));
         runner.finalize();
     });
 });
