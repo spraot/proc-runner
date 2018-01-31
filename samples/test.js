@@ -16,7 +16,7 @@ procs[1].args = undefined;
 
 console.log(`Running ${procs.length} subprocesses...\n`);
 
-const runner = require('../lib/runner')({printStatus: true});
+const runner = require('../lib/runner')({printStatus: true, startTimeout: 1000});
 runner.addProc(procs.slice(0,4));
 
 runner.on('terminated', function(reason) {
