@@ -1,6 +1,6 @@
 {
   "name": "proc-runner",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "API for CLI running multiple concurrent processes",
   "repository": "https://github.com/rachetfoot/proc-runner",
   "main": "lib/runner.js",
