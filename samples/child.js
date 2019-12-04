@@ -11,8 +11,13 @@ const show_progress = () => {
 
 	console.log('T='+progress.toFixed(2)+'s Progress='+(progress/proc_length*100).toFixed(0)+'%');
 
-	if (Math.random()>0.9999) {
-		console.log('Some random error!');
+	if (Math.random()>0.997) {
+		console.error('Some random error!');
+		process.exit(1);
+	}
+
+	if (Math.random()>0.998) {
+		console.error('Other error!');
 		process.exit(1);
 	}
 

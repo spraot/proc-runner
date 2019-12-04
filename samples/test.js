@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-const proc_count = 20;
+const proc_count = 10;
 const procs = [];
 let i = 0;
 while (procs.length<proc_count) {
-    const len = Math.random()*2+4;
+    const len = Math.random()*3+2;
     i++;
     procs.push({
     	name: 'process_'+i,
@@ -16,8 +16,8 @@ procs[1].args = undefined;
 
 console.log(`Running ${procs.length} subprocesses...\n`);
 
-const runner = require('../lib/runner')({printStatus: true, startTimeout: 1000});
-runner.addProc(procs.slice(0,4));
+const runner = require('../lib/runner')({printStatus: true, startTimeout: 1000, retry: /.*random.*/});
+runner.addProc(procs.splice(0,4));
 
 runner.on('terminated', function(reason) {
     if (reason)
@@ -25,21 +25,21 @@ runner.on('terminated', function(reason) {
     else
         console.log('\nAll processes done');
 
-    console.log(this.errCount + ' processes failed');
-    console.log(this.killedCount + ' processes terminated');
-    console.log(this.successCount + ' processes finished successfully');
+    console.log(`${this.successCount} of ${runner._procs.length} processes finished successfully in ${runner.startedCount} attempts`);
+    console.log(this.killedCount + ' attempts terminated');
+    console.log(this.errCount + ' attempts failed');
 
     setTimeout(() => process.exit(), 100);
 });
 
 runner.on('processStarted', function(proc) {
-    if (proc.inx === 3) {
+    if (proc.inx === 3 && (!proc.tries || proc.tries === 1)) {
         console.log('\nWaiting for first batch of processes to finish before adding more...\n')
     }
 });
 
 runner.once('idle', () => {
     runner.cpuCount = 2;
-    runner.addProc(procs.slice(4));
+    runner.addProc(procs.splice(0));
     runner.finalize();
 });
